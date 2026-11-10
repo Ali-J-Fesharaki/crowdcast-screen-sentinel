@@ -23,6 +23,19 @@ import zoneinfo
 from datetime import datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 
+# Add ~/.local/bin for crowdcast_net_monitor import
+if "/home/ubuntu/.local/bin" not in sys.path:
+    sys.path.append("/home/ubuntu/.local/bin")
+
+try:
+    from crowdcast_net_monitor import (
+        get_full_network_and_upload_telemetry,
+        trigger_native_upload_toggle,
+    )
+except ImportError:
+    trigger_native_upload_toggle = lambda act: {"success": False}
+    get_full_network_and_upload_telemetry = lambda: {}
+
 # Paths inside crowd-vm
 STATE_DIR = Path("/home/ubuntu/.local/state/crowdcast-ctl")
 AGENT_SHARE_DIR = Path("/home/ubuntu/.local/share/agent")
@@ -259,7 +272,7 @@ class UploadProgressTracker:
 
 
 def set_uploads_paused(paused: bool):
-    """Updates uploads_paused state flag read by crowd-cast-agent."""
+    """Updates uploads_paused state flag read by crowd-cast-agent and native D-Bus menu."""
     val_str = "true" if paused else "false"
     current_val = ""
     if UPLOADS_PAUSED_FILE.exists():
@@ -276,6 +289,14 @@ def set_uploads_paused(paused: bool):
             logger.info(f"Updated uploads_paused flag to: '{val_str}'")
         except Exception as e:
             logger.error(f"Failed to write uploads_paused file: {e}")
+
+        # Dispatch native D-Bus menu event to crowd-cast tray thread
+        try:
+            action = "pause" if paused else "resume"
+            res = trigger_native_upload_toggle(action)
+            logger.info(f"Native D-Bus upload toggle ({action}) triggered: {res.get('message_fa')}")
+        except Exception as e:
+            logger.warning(f"Could not trigger native D-Bus upload toggle: {e}")
 
 
 def calculate_window_status(dt_tehran: datetime, manual_override: bool):
@@ -321,9 +342,18 @@ def run_scheduler_loop():
     tracker.sync_pending_uploads_file()
 
     last_logged_state = None
+    last_net_probe = 0.0
 
     while True:
         try:
+            now = time.time()
+            if now - last_net_probe > 20:
+                last_net_probe = now
+                try:
+                    get_full_network_and_upload_telemetry()
+                except Exception:
+                    pass
+
             dt_tehran = time_sync.get_current_tehran_datetime()
             manual_override = MANUAL_OVERRIDE_FLAG.exists()
             is_active, is_sched_open, next_event_fa, next_event_en = calculate_window_status(dt_tehran, manual_override)

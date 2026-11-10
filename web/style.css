@@ -684,6 +684,53 @@ tr.row-blackout-risk td {
   margin-top: 2px;
 }
 
+/* Network Endpoints Box */
+.net-endpoints-box {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.76rem;
+}
+
+.net-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.net-chips-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.net-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.net-chip.online {
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #a7f3d0;
+}
+
+.net-chip.offline {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
 .uploader-controls {
   display: flex;
   gap: 8px;

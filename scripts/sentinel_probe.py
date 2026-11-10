@@ -28,6 +28,7 @@ ENV["XDG_SESSION_TYPE"] = "wayland"
 
 CONFIG_PATH = Path("/home/ubuntu/.config/agent/config.toml")
 UPLOAD_STATUS_PATH = Path("/home/ubuntu/.local/state/crowdcast-ctl/tehran_upload_status.json")
+NETWORK_HEALTH_PATH = Path("/home/ubuntu/.local/state/crowdcast-ctl/network_health.json")
 LOG_PATH = Path("/home/ubuntu/.local/state/crowdcast-ctl/agent.log")
 
 
@@ -114,6 +115,15 @@ def probe_all():
         except Exception:
             pass
 
+    # 4.1 Network health
+    network_health = {}
+    if NETWORK_HEALTH_PATH.exists():
+        try:
+            with open(NETWORK_HEALTH_PATH, "r", encoding="utf-8") as f:
+                network_health = json.load(f)
+        except Exception:
+            pass
+
     # 5. Recent logs
     recent_logs = []
     if LOG_PATH.exists():
@@ -134,6 +144,7 @@ def probe_all():
         "agent_running": agent_running,
         "agent_pid": agent_pid,
         "upload_schedule": upload_status,
+        "network_health": network_health,
         "recent_logs": recent_logs,
         "timestamp": t1,
     }

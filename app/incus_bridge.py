@@ -232,16 +232,27 @@ class IncusBridge:
         return {}
 
     def start_manual_upload(self) -> Tuple[bool, str]:
-        """Forces manual upload start regardless of schedule."""
-        cmd = "touch /home/ubuntu/.local/state/crowdcast-ctl/manual_upload.flag && echo -n 'false' > /home/ubuntu/.local/share/agent/uploads_paused"
+        """Forces manual upload start using native crowd-cast D-Bus tray menu trigger."""
+        cmd = "~/.local/bin/crowdcast_net_monitor.py resume && touch /home/ubuntu/.local/state/crowdcast-ctl/manual_upload.flag && echo -n 'false' > /home/ubuntu/.local/share/agent/uploads_paused"
         code, stdout, stderr = self.exec_guest(cmd)
         return code == 0, stdout or stderr
 
     def pause_manual_upload(self) -> Tuple[bool, str]:
-        """Pauses manual upload and returns to strict schedule."""
-        cmd = "rm -f /home/ubuntu/.local/state/crowdcast-ctl/manual_upload.flag && echo -n 'true' > /home/ubuntu/.local/share/agent/uploads_paused"
+        """Pauses manual upload using native crowd-cast D-Bus tray menu trigger."""
+        cmd = "~/.local/bin/crowdcast_net_monitor.py pause && rm -f /home/ubuntu/.local/state/crowdcast-ctl/manual_upload.flag && echo -n 'true' > /home/ubuntu/.local/share/agent/uploads_paused"
         code, stdout, stderr = self.exec_guest(cmd)
         return code == 0, stdout or stderr
+
+    def get_network_health(self) -> Dict[str, Any]:
+        """Reads cloud network connectivity and speed telemetry."""
+        cmd = ["incus", "exec", self.vm_name, "--", "cat", "/home/ubuntu/.local/state/crowdcast-ctl/network_health.json"]
+        code, stdout, _ = self.run_incus_cmd(cmd)
+        if code == 0 and stdout:
+            try:
+                return json.loads(stdout)
+            except Exception:
+                pass
+        return {}
 
     def get_agent_status(self) -> Dict[str, Any]:
         """Checks if crowd-cast-agent is running and inspects recent logs."""

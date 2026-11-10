@@ -235,6 +235,38 @@ function renderUI(data) {
     }
   }
 
+  // 4.2 Render Cloud Network Endpoints Health
+  if (data.network_health && data.network_health.network) {
+    const net = data.network_health.network;
+    const eps = net.endpoints || {};
+    const elOverall = document.getElementById('net-overall-status');
+    if (elOverall) {
+      if (net.can_upload) {
+        elOverall.innerHTML = `<span style="color:#10b981;">🟢 آنلاین (${net.avg_latency_ms}ms)</span>`;
+      } else {
+        elOverall.innerHTML = `<span style="color:#ef4444;">🔴 قطعی ابر</span>`;
+      }
+    }
+
+    const renderChip = (id, key, fallbackLabel) => {
+      const chip = document.getElementById(id);
+      if (!chip) return;
+      const item = eps[key];
+      if (item && item.status === 'ONLINE') {
+        chip.className = 'net-chip online';
+        chip.innerHTML = `${fallbackLabel}: <span class="net-ping">${item.latency_ms || 0}ms</span>`;
+      } else {
+        chip.className = 'net-chip offline';
+        chip.innerHTML = `${fallbackLabel}: <span class="net-ping">قطع</span>`;
+      }
+    };
+
+    renderChip('chip-google', 'google_auth', 'Google');
+    renderChip('chip-api', 'aws_api', 'API');
+    renderChip('chip-s3', 'aws_s3', 'S3');
+    renderChip('chip-proxy', 'proxy', 'Proxy');
+  }
+
   // 5. Render Windows Table
   renderWindowsTable();
 }

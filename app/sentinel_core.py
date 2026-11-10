@@ -107,6 +107,7 @@ class SentinelManager:
             agent_pid = probe.get("agent_pid")
             agent_logs = probe.get("recent_logs", [])
             upload_schedule = probe.get("upload_schedule", {})
+            network_health = probe.get("network_health", {})
         else:
             # Fallback to granular calls
             config = self.bridge.read_config()
@@ -123,6 +124,7 @@ class SentinelManager:
             agent_pid = agent_status.get("pid")
             agent_logs = agent_status.get("recent_logs", [])
             upload_schedule = self.bridge.get_upload_schedule_status()
+            network_health = self.bridge.get_network_health()
 
         focused_wid = focused.get("window_id") if focused else None
         focused_class = focused.get("wm_class") if focused else None
@@ -199,6 +201,7 @@ class SentinelManager:
             },
             "luma": luma_info,
             "upload_schedule": upload_schedule,
+            "network_health": network_health,
             "last_updated_at": time.time(),
         }
 

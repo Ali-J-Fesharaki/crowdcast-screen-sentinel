@@ -183,6 +183,20 @@
               <code id="upload-active-chunk">در انتظار زمان‌بندی...</code>
             </div>
 
+            <!-- Network Endpoints Status & Latency -->
+            <div class="net-endpoints-box" id="net-endpoints-box">
+              <div class="net-title-row">
+                <span>🌐 پایش شبکه و ارتباط ابری:</span>
+                <strong id="net-overall-status" style="color:#10b981;">بررسی...</strong>
+              </div>
+              <div class="net-chips-grid">
+                <div class="net-chip" id="chip-google" title="Google OAuth2">Google: <span class="net-ping">-</span></div>
+                <div class="net-chip" id="chip-api" title="AWS API Gateway">API: <span class="net-ping">-</span></div>
+                <div class="net-chip" id="chip-s3" title="AWS S3 Storage">S3: <span class="net-ping">-</span></div>
+                <div class="net-chip" id="chip-proxy" title="Host SOCKS5 Proxy">Proxy: <span class="net-ping">-</span></div>
+              </div>
+            </div>
+
             <div class="uploader-controls">
               <button id="btn-force-upload" class="btn btn-primary btn-xs" style="flex:1;">
                 🚀 شروع فوری آپلود
