@@ -1,0 +1,19 @@
+[Unit]
+Description=Crowd-Cast Autonomous Recorder Watchdog & Assurance Daemon
+After=graphical-session.target network.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=XDG_SESSION_TYPE=wayland
+ExecStart=/usr/bin/python3 /home/ubuntu/.local/bin/crowdcast-recorder-watchdog.py
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -13,7 +13,8 @@ SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_VM_NAME = os.environ.get("CROWDCAST_VM_NAME", "crowd-vm")
 GUEST_USER = os.environ.get("CROWDCAST_GUEST_USER", "ubuntu")
 GUEST_CONFIG_PATH = "/home/ubuntu/.config/agent/config.toml"
-GUEST_RECORDINGS_DIR = "/tmp/crowd-cast-recordings"
+GUEST_RECORDINGS_DIR = "/home/ubuntu/shared-recordings/crowd-cast-recordings"
+HOST_RECORDINGS_DIR = Path("/home/ajf/crowd-recordings/crowd-cast-recordings")
 GUEST_LOG_PATH = "/home/ubuntu/.local/state/crowdcast-ctl/agent.log"
 
 # Server configuration
