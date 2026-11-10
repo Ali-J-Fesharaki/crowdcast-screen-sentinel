@@ -1,0 +1,18 @@
+[Unit]
+Description=Crowd-Cast Tehran Timezone Upload Scheduler (03:05 - 06:50 Asia/Tehran)
+After=network.target graphical-session.target
+
+[Service]
+Type=simple
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=XDG_SESSION_TYPE=wayland
+ExecStart=/usr/bin/python3 /home/ubuntu/.local/bin/tehran_upload_scheduler.py
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

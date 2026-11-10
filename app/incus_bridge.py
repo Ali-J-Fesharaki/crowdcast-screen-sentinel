@@ -210,6 +210,17 @@ class IncusBridge:
             logger.error(f"Failed to write user whitelist: {e}")
             return False
 
+    def get_upload_schedule_status(self) -> Dict[str, Any]:
+        """Reads real-time Tehran upload schedule status from the VM."""
+        cmd = ["incus", "exec", self.vm_name, "--", "cat", "/home/ubuntu/.local/state/crowdcast-ctl/tehran_upload_status.json"]
+        code, stdout, _ = self.run_incus_cmd(cmd)
+        if code != 0 or not stdout:
+            return {}
+        try:
+            return json.loads(stdout)
+        except Exception:
+            return {}
+
     def get_agent_status(self) -> Dict[str, Any]:
         """Checks if crowd-cast-agent is running and inspects recent logs."""
         cmd = "~/.local/bin/crowdcast-ctl status"

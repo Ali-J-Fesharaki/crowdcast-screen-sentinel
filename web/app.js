@@ -158,6 +158,26 @@ function renderUI(data) {
   // 4. Render Safeguards Check
   renderSafeguards(data.config);
 
+  // 4.1 Render Tehran Upload Schedule
+  if (data.upload_schedule && data.upload_schedule.tehran_time) {
+    const sched = data.upload_schedule;
+    const timeOnly = sched.tehran_time.split(' ')[1] || '';
+    const elTehranTime = document.getElementById('stat-tehran-time');
+    const elTehranStatus = document.getElementById('stat-tehran-status');
+    const elCardSched = document.getElementById('card-tehran-schedule');
+    
+    if (elTehranTime) elTehranTime.innerText = `${timeOnly} (تهران)`;
+    if (elTehranStatus) {
+      if (sched.is_window_open) {
+        elTehranStatus.innerHTML = `<span style="color:#10b981; font-weight:700;">🟢 ${sched.status_fa}</span><br><small>${sched.next_event_fa}</small>`;
+        if (elCardSched) elCardSched.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+      } else {
+        elTehranStatus.innerHTML = `<span style="color:#f59e0b; font-weight:700;">⏸️ ${sched.status_fa}</span><br><small>${sched.next_event_fa}</small>`;
+        if (elCardSched) elCardSched.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+      }
+    }
+  }
+
   // 5. Render Windows Table
   renderWindowsTable();
 }

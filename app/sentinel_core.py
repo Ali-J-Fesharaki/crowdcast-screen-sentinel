@@ -121,6 +121,7 @@ class SentinelManager:
 
         # Sample recent luma if agent is running
         luma_info = self.luma_sampler.sample_latest_frame()
+        upload_schedule = self.bridge.get_upload_schedule_status()
 
         return {
             "vm_name": self.bridge.vm_name,
@@ -139,6 +140,7 @@ class SentinelManager:
                 "idle_timeout_secs": idle_timeout,
             },
             "luma": luma_info,
+            "upload_schedule": upload_schedule,
         }
 
     def add_to_monitoring(self, wm_class: str) -> Dict[str, Any]:
