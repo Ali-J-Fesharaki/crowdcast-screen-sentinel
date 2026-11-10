@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crowdcast-screen-sentinel"
+version = "1.0.0"
+description = "Incus VM Window Monitor and One-Click Black Screen Fixer for Crowd-Cast"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Ali Jafari Fesharaki", email = "ali.jafari.fesh@gmail.com"}
+]
+keywords = ["crowd-cast", "incus", "wayland", "screen-recording", "black-screen-fixer", "obs"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Gnome",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "pillow>=9.0.0",
+    "numpy>=1.20.0"
+]
+
+[project.scripts]
+crowdcast-sentinel = "sentinel:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

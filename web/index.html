@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrowdCast Screen Sentinel | نگهبان صفحات و رفع مشکل صفحه سیاه</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="logo-shield">🛡️</div>
+        <div>
+          <h1>نگهبان صفحات Crowd-Cast</h1>
+          <p class="subtitle">مانیتورینگ هوشمند پنجره‌های ماشین مجازی (Incus) و حل یک‌کلیکه صفحات سیاه</p>
+        </div>
+      </div>
+      <div class="nav-badges">
+        <div id="vm-badge" class="badge badge-vm">
+          <span class="dot"></span>
+          <span>ماشین مجازی: <strong id="vm-name-display">crowd-vm</strong></span>
+        </div>
+        <div id="agent-status-badge" class="badge badge-status">
+          <span class="dot"></span>
+          <span id="agent-status-text">بررسی وضعیت...</span>
+        </div>
+        <button id="btn-refresh" class="btn btn-secondary btn-icon" title="بروزرسانی داده‌ها">
+          🔄 بروزرسانی
+        </button>
+      </div>
+    </header>
+
+    <!-- Global Black Screen Alert Banner (Shown when active blackout occurs) -->
+    <div id="blackout-banner" class="alert-banner alert-danger hidden">
+      <div class="alert-icon">🚨</div>
+      <div class="alert-content">
+        <h3>هشدار فوری: یک صفحه در حال ضبط کاملاً سیاه است!</h3>
+        <p id="blackout-banner-desc">پنجره فعال فعلی در لیست مجاز Crowd-Cast قرار ندارد یا تنظیمات ضبط دچار خطا شده است.</p>
+      </div>
+      <button id="btn-banner-fix" class="btn btn-warning-pulse">
+        ⚡ حل سریع مشکل همین صفحه
+      </button>
+    </div>
+
+    <!-- Quick Stats Grid -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">پنجره‌های باز در ماشین</span>
+          <span class="stat-icon">🪟</span>
+        </div>
+        <div class="stat-value" id="stat-total-windows">-</div>
+        <div class="stat-footer" id="stat-windows-sub">در حال اسکن D-Bus...</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">صفحات تحت نظارت ضبط</span>
+          <span class="stat-icon">✅</span>
+        </div>
+        <div class="stat-value" id="stat-monitored-windows">-</div>
+        <div class="stat-footer">برنامه‌های مجاز در target_apps</div>
+      </div>
+
+      <div class="stat-card stat-card-alert" id="card-blackout-count">
+        <div class="stat-header">
+          <span class="stat-title">صفحات دارای ریسک یا خطای سیاه</span>
+          <span class="stat-icon">⚠️</span>
+        </div>
+        <div class="stat-value" id="stat-blackout-count">-</div>
+        <div class="stat-footer" id="stat-blackout-desc">نیازمند افزودن به نظارت</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">کیفیت و روشنایی تصویر (Luma)</span>
+          <span class="stat-icon">💡</span>
+        </div>
+        <div class="stat-value" id="stat-luma-mean">-</div>
+        <div class="stat-footer" id="stat-luma-status">بررسی فریم ویدیو...</div>
+      </div>
+    </section>
+
+    <!-- Main Content Area -->
+    <main class="main-layout">
+      <!-- Windows / Screens Table Card -->
+      <section class="card content-card">
+        <div class="card-header">
+          <div class="header-left">
+            <h2>🖥️ پنجره‌ها و صفحات موجود در ماشین</h2>
+            <p class="section-desc">وضعیت نظارت هر صفحه را بررسی کنید و با یک کلیک مشکل ضبط سیاه را برطرف نمایید.</p>
+          </div>
+          <div class="header-actions">
+            <button id="btn-whitelist-all" class="btn btn-primary">
+              ⚡ نظارت بر تمام پنجره‌های باز
+            </button>
+            <button id="btn-restart-agent" class="btn btn-secondary">
+              🔄 ریستارت ریکوردر
+            </button>
+            <button id="btn-open-settings" class="btn btn-secondary">
+              ⚙️ تنظیمات ایمنی
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter bar -->
+        <div class="filter-bar">
+          <div class="search-box">
+            <input type="text" id="window-search" placeholder="🔍 جستجو در نام پنجره، عنوان یا کلاس برنامه...">
+          </div>
+          <div class="filter-buttons">
+            <button class="filter-chip active" data-filter="all">همه صفحات (<span id="count-all">0</span>)</button>
+            <button class="filter-chip chip-warning" data-filter="blackout">دارای مشکل سیاه (<span id="count-blackout">0</span>)</button>
+            <button class="filter-chip chip-success" data-filter="monitored">تحت نظارت (<span id="count-monitored">0</span>)</button>
+          </div>
+        </div>
+
+        <!-- Windows Table Container -->
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th width="30%">عنوان پنجره و برنامه</th>
+                <th width="18%">کلاس ویلند (wm_class)</th>
+                <th width="12%">وضعیت فوکوس</th>
+                <th width="22%">وضعیت ضبط و سیاهی</th>
+                <th width="18%" class="text-center">عملیات هوشمند</th>
+              </tr>
+            </thead>
+            <tbody id="windows-table-body">
+              <tr>
+                <td colspan="5" class="loading-row">
+                  <div class="spinner"></div>
+                  <span>در حال دریافت اطلاعات پنجره‌ها از Wayland D-Bus...</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Sidebar: Live Visual Probe & Quick Diagnostic -->
+      <aside class="sidebar-layout">
+        <!-- Live Snapshot Card -->
+        <div class="card preview-card">
+          <div class="card-header">
+            <h3>👁️ آخرین فریم ضبط شده</h3>
+            <button id="btn-sample-now" class="btn btn-xs btn-secondary">نمونه‌برداری مجدد</button>
+          </div>
+          <div class="preview-container">
+            <img id="preview-image" src="/api/preview.png" alt="آخرین فریم ضبط شده" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'320\' height=\'180\'><rect width=\'100%\' height=\'100%\' fill=\'%23111827\'/><text x=\'50%\' y=\'50%\' fill=\'%239ca3af\' font-family=\'sans-serif\' font-size=\'14\' text-anchor=\'middle\'>داده تصویری در دسترس نیست</text></svg>'">
+            <div id="preview-luma-tag" class="preview-tag">Luma: -</div>
+          </div>
+          <div class="preview-details">
+            <div class="detail-row">
+              <span>فایل منبع ویدیویی:</span>
+              <code id="preview-source">-</code>
+            </div>
+            <div class="detail-row">
+              <span>سطح روشنایی (Min / Max / Mean):</span>
+              <strong id="preview-stats">- / - / -</strong>
+            </div>
+            <div class="detail-row">
+              <span>ارزیابی تصویر:</span>
+              <span id="preview-verdict" class="badge">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Safe Configuration Status Card -->
+        <div class="card settings-summary-card">
+          <div class="card-header">
+            <h3>🛡️ تاییدیه‌های ضد صفحه سیاه</h3>
+          </div>
+          <ul class="safeguard-list">
+            <li id="rule-capture-all">
+              <span class="icon">❓</span>
+              <div class="rule-text">
+                <strong>حالت capture_all غیرفعال</strong>
+                <small>جلوگیری از لغو دسترسی در پورتال ویلند</small>
+              </div>
+            </li>
+            <li id="rule-blank-untracked">
+              <span class="icon">❓</span>
+              <div class="rule-text">
+                <strong>حفظ تصویر هنگام تغییر فوکوس</strong>
+                <small>غیرفعال بودن blank_video_on_untracked_app</small>
+              </div>
+            </li>
+            <li id="rule-idle-timeout">
+              <span class="icon">❓</span>
+              <div class="rule-text">
+                <strong>تایم‌اوت بیکاری مناسب (>= 600s)</strong>
+                <small>جلوگیری از مکث و توقف ضبط در پس‌زمینه</small>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>⚙️ تنظیمات پیشرفته و ایمنی ریکوردر</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" id="cfg-blank-untracked">
+              <span>سیاه کردن تصویر روی برنامه‌های غیرمجاز (blank_video_on_untracked_app)</span>
+            </label>
+            <p class="help-text text-danger">⚠️ فعال بودن این گزینه باعث سیاه شدن آنی ویدیو در صورت کلیک روی بک‌گراند یا تسک‌بار می‌شود. (توصیه: غیرفعال)</p>
+          </div>
+
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" id="cfg-capture-all">
+              <span>ضبط تمام دسکتاپ (capture_all)</span>
+            </label>
+            <p class="help-text text-danger">🚨 خطای بحرانی: در Wayland GNOME این گزینه پنجره دیالوگ می‌آورد و کل ضبط را ۱۰۰٪ سیاه می‌کند! (توصیه: حتماً غیرفعال باشد)</p>
+          </div>
+
+          <div class="form-group">
+            <label for="cfg-idle-timeout">تایم‌اوت توقف خودکار به هنگام بیکاری (ثانیه):</label>
+            <input type="number" id="cfg-idle-timeout" min="0" max="3600" step="60" class="input-control">
+            <p class="help-text">برای جلوگیری از پاز شدن ضبط در تست‌های خودکار، روی ۶۰۰ ثانیه یا بیشتر تنظیم کنید.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-save-settings" class="btn btn-primary">ذخیره و اعمال در ماشین</button>
+          <button class="btn btn-secondary modal-close">انصراف</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
