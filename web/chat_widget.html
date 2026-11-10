@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    .widget-box {
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: 12px;
+      padding: 16px;
+      color: var(--foreground);
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .widget-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+    .widget-title {
+      font-weight: 700;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-link {
+      background: var(--accent);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .win-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .win-item.active-blackout {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+    }
+    .win-name {
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    .win-class {
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+      font-family: monospace;
+    }
+    .tag {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .tag-danger { background: rgba(239,68,68,0.2); color: #fca5a5; }
+    .tag-warning { background: rgba(245,158,11,0.2); color: #fde68a; }
+    .tag-safe { background: rgba(16,185,129,0.2); color: #6ee7b7; }
+    .btn-action {
+      background: #f59e0b;
+      color: #000;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="widget-box" id="widget-container">
+    <div class="widget-head">
+      <div class="widget-title">
+        <span>🛡️ ناظر صفحات و رفع مشکل صفحه سیاه Crowd-Cast</span>
+      </div>
+      <a href="http://localhost:8585" target="_blank" class="btn-link">باز کردن داشبورد کامل ↗</a>
+    </div>
+
+    <div id="status-summary" style="font-size: 0.82rem; color: var(--muted-foreground);">
+      در حال دریافت وضعیت از سرور محلی...
+    </div>
+
+    <div id="windows-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+  </div>
+
+  <script>
+    async function loadStatus() {
+      try {
+        const res = await fetch('http://localhost:8585/api/status');
+        const data = await res.json();
+        
+        const summary = document.getElementById('status-summary');
+        summary.innerHTML = `ماشین: <strong>${data.vm_name}</strong> | وضعیت ضبط: <strong>${data.agent_running ? '🟢 فعال' : '🔴 متوقف'}</strong> | پنجره‌های باز: <strong>${data.total_windows}</strong> | خطای صفحه سیاه: <strong>${data.blackout_windows_count}</strong>`;
+
+        const list = document.getElementById('windows-list');
+        list.innerHTML = data.windows.map(w => {
+          let badge = `<span class="tag tag-safe">🟢 ایمن</span>`;
+          let fixBtn = '';
+          if (w.blackout_status === 'ACTIVE_BLACKOUT') {
+            badge = `<span class="tag tag-danger">🔴 ضبط سیاه!</span>`;
+            fixBtn = `<button class="btn-action" onclick="fixApp('${w.wm_class}')">⚡ رفع فوری سیاهی</button>`;
+          } else if (w.blackout_status === 'BLACKOUT_RISK') {
+            badge = `<span class="tag tag-warning">🟡 ریسک سیاهی</span>`;
+            fixBtn = `<button class="btn-action" onclick="fixApp('${w.wm_class}')">⚡ حل مشکل</button>`;
+          }
+
+          return `
+            <div class="win-item ${w.blackout_status === 'ACTIVE_BLACKOUT' ? 'active-blackout' : ''}">
+              <div>
+                <div class="win-name">${w.display_name} ${w.is_focused ? '🎯 (در فوکوس)' : ''}</div>
+                <div class="win-class">${w.wm_class}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                ${badge}
+                ${fixBtn}
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (e) {
+        document.getElementById('status-summary').innerText = 'سرور فعال نیست یا اتصال در دسترس نمی‌باشد.';
+      }
+    }
+
+    async function fixApp(wmClass) {
+      await fetch('http://localhost:8585/api/windows/fix', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ wm_class: wmClass })
+      });
+      loadStatus();
+    }
+
+    loadStatus();
+    setInterval(loadStatus, 3000);
+  </script>
+</body>
+</html>
