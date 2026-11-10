@@ -38,7 +38,8 @@ class TestSentinelDiagnostics(unittest.TestCase):
         }
         self.sentinel.luma_sampler.sample_latest_frame = MagicMock(return_value={"success": True, "mean": 0.0, "is_black": True})
 
-        state = self.sentinel.get_full_state()
+        self.mock_bridge.probe_guest_all.return_value = None
+        state = self.sentinel.get_full_state(force=True)
         self.assertTrue(state["has_active_blackout"])
 
         nautilus_eval = next(w for w in state["windows"] if w["wm_class"] == "org.gnome.Nautilus")
@@ -63,7 +64,8 @@ class TestSentinelDiagnostics(unittest.TestCase):
         self.mock_bridge.get_focused_window.return_value = None
         self.sentinel.luma_sampler.sample_latest_frame = MagicMock(return_value={"success": True, "mean": 0.0, "is_black": True})
 
-        state = self.sentinel.get_full_state()
+        self.mock_bridge.probe_guest_all.return_value = None
+        state = self.sentinel.get_full_state(force=True)
         self.assertTrue(state["has_active_blackout"])
         self.assertEqual(state["windows"][0]["blackout_status"], "ACTIVE_BLACKOUT")
 
