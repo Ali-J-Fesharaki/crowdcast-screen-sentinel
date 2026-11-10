@@ -221,6 +221,16 @@ class IncusBridge:
         except Exception:
             return {}
 
+    def probe_guest_all(self) -> Dict[str, Any]:
+        """Runs the unified single-shot probe inside the VM and returns full telemetry."""
+        code, stdout, stderr = self.exec_guest("~/.local/bin/sentinel_probe.py", timeout=5)
+        if code == 0 and stdout:
+            try:
+                return json.loads(stdout)
+            except Exception as e:
+                logger.error(f"Failed to parse probe output: {e}")
+        return {}
+
     def start_manual_upload(self) -> Tuple[bool, str]:
         """Forces manual upload start regardless of schedule."""
         cmd = "touch /home/ubuntu/.local/state/crowdcast-ctl/manual_upload.flag && echo -n 'false' > /home/ubuntu/.local/share/agent/uploads_paused"

@@ -68,8 +68,14 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
+let isFetching = false;
+let clockBaseTime = null;
+let clockBaseTimestamp = 0;
+
 // Fetch Full System State
 async function fetchState() {
+  if (isFetching) return;
+  isFetching = true;
   try {
     const res = await fetch('/api/status');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -81,11 +87,26 @@ async function fetchState() {
     state.agentRunning = data.agent_running;
     state.agentPid = data.agent_pid;
 
+    if (data.upload_schedule && data.upload_schedule.tehran_time) {
+      const parts = data.upload_schedule.tehran_time.split(' ');
+      if (parts.length >= 2) {
+        const timeParts = parts[1].split(':');
+        if (timeParts.length >= 3) {
+          const now = new Date();
+          now.setHours(parseInt(timeParts[0], 10), parseInt(timeParts[1], 10), parseInt(timeParts[2], 10));
+          clockBaseTime = now;
+          clockBaseTimestamp = Date.now();
+        }
+      }
+    }
+
     renderUI(data);
   } catch (err) {
     console.error('Error fetching sentinel state:', err);
     elAgentStatusText.innerText = 'قطع ارتباط با سرور';
     elAgentStatus.className = 'badge badge-status stopped';
+  } finally {
+    isFetching = false;
   }
 }
 
@@ -631,6 +652,26 @@ elBtnRefresh.onclick = () => {
   showToast('داده‌ها بروز شدند', 'info');
 };
 
-// Initial state fetch and polling loop (every 3.5s)
+// Local smooth 1s clock ticker
+function startLiveClockTicker() {
+  setInterval(() => {
+    if (clockBaseTime) {
+      const elapsedMs = Date.now() - clockBaseTimestamp;
+      const currentTehran = new Date(clockBaseTime.getTime() + elapsedMs);
+      const h = String(currentTehran.getHours()).padStart(2, '0');
+      const m = String(currentTehran.getMinutes()).padStart(2, '0');
+      const s = String(currentTehran.getSeconds()).padStart(2, '0');
+      const timeStr = `${h}:${m}:${s}`;
+
+      const elTehranTime = document.getElementById('stat-tehran-time');
+      const elUploadTime = document.getElementById('upload-stat-time');
+      if (elTehranTime) elTehranTime.innerText = `${timeStr} (تهران)`;
+      if (elUploadTime) elUploadTime.innerText = timeStr;
+    }
+  }, 1000);
+}
+
+// Initial state fetch, live polling loop (every 1.5s), and 1s clock ticker
 fetchState();
-pollTimer = setInterval(fetchState, 3500);
+pollTimer = setInterval(fetchState, 1500);
+startLiveClockTicker();

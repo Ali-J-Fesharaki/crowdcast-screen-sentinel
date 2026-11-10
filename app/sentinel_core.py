@@ -2,6 +2,8 @@
 
 import logging
 import re
+import threading
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import APP_METADATA, KNOWN_WM_CLASS_ALIASES
@@ -42,25 +44,89 @@ class SentinelManager:
     def __init__(self, bridge: IncusBridge):
         self.bridge = bridge
         self.luma_sampler = LumaSampler(bridge)
+        self._lock = threading.Lock()
+        self.cached_state = self._build_empty_state()
+        self._worker_thread = threading.Thread(target=self._telemetry_worker, daemon=True)
+        self._worker_thread.start()
 
-    def get_full_state(self) -> Dict[str, Any]:
-        """Gathers complete real-time state: windows, focused app, config, agent status, and blackout diagnostics."""
-        raw_config = self.bridge.read_config_raw()
-        config = self.bridge.read_config()
-        capture_cfg = config.get("capture", {})
-        target_apps = capture_cfg.get("target_apps", [])
-        capture_all = capture_cfg.get("capture_all", False)
-        blank_on_untracked = capture_cfg.get("blank_video_on_untracked_app", False)
-        idle_timeout = capture_cfg.get("idle_timeout_secs", 120)
+    def _build_empty_state(self) -> Dict[str, Any]:
+        return {
+            "vm_name": self.bridge.vm_name,
+            "agent_running": False,
+            "agent_pid": None,
+            "agent_logs": [],
+            "has_active_blackout": False,
+            "blackout_windows_count": 0,
+            "total_windows": 0,
+            "windows": [],
+            "focused_window": None,
+            "config": {
+                "target_apps": [],
+                "capture_all": False,
+                "blank_video_on_untracked_app": False,
+                "idle_timeout_secs": 600,
+            },
+            "luma": {"success": False, "mean": 0.0, "is_black": True},
+            "upload_schedule": {},
+        }
 
-        agent_status = self.bridge.get_agent_status()
-        open_windows = self.bridge.get_open_windows()
-        focused = self.bridge.get_focused_window()
+    def _telemetry_worker(self):
+        """Dedicated background thread continuously updating state cache every 1.5s."""
+        logger.info("Sentinel background telemetry worker thread started.")
+        while True:
+            try:
+                state = self._fetch_live_state()
+                with self._lock:
+                    self.cached_state = state
+            except Exception as e:
+                logger.error(f"Error in telemetry worker loop: {e}")
+            time.sleep(1.5)
+
+    def get_full_state(self, force: bool = False) -> Dict[str, Any]:
+        """Returns cached state instantly (<1ms). If force=True, evaluates live."""
+        if not force:
+            with self._lock:
+                if self.cached_state and self.cached_state.get("windows"):
+                    return self.cached_state
+        return self._fetch_live_state()
+
+    def _fetch_live_state(self) -> Dict[str, Any]:
+        """Gathers complete real-time state using fast unified single-shot probe."""
+        probe = self.bridge.probe_guest_all()
+        if probe:
+            config = probe.get("config", {})
+            capture_cfg = config.get("capture", {})
+            target_apps = capture_cfg.get("target_apps", [])
+            capture_all = capture_cfg.get("capture_all", False)
+            blank_on_untracked = capture_cfg.get("blank_video_on_untracked_app", False)
+            idle_timeout = capture_cfg.get("idle_timeout_secs", 600)
+
+            open_windows = probe.get("windows", [])
+            focused = probe.get("focused_window")
+            agent_running = probe.get("agent_running", False)
+            agent_pid = probe.get("agent_pid")
+            agent_logs = probe.get("recent_logs", [])
+            upload_schedule = probe.get("upload_schedule", {})
+        else:
+            # Fallback to granular calls
+            config = self.bridge.read_config()
+            capture_cfg = config.get("capture", {})
+            target_apps = capture_cfg.get("target_apps", [])
+            capture_all = capture_cfg.get("capture_all", False)
+            blank_on_untracked = capture_cfg.get("blank_video_on_untracked_app", False)
+            idle_timeout = capture_cfg.get("idle_timeout_secs", 600)
+
+            agent_status = self.bridge.get_agent_status()
+            open_windows = self.bridge.get_open_windows()
+            focused = self.bridge.get_focused_window()
+            agent_running = agent_status.get("running", False)
+            agent_pid = agent_status.get("pid")
+            agent_logs = agent_status.get("recent_logs", [])
+            upload_schedule = self.bridge.get_upload_schedule_status()
 
         focused_wid = focused.get("window_id") if focused else None
         focused_class = focused.get("wm_class") if focused else None
 
-        # Analyze each window
         evaluated_windows = []
         has_active_blackout = False
         blackout_count = 0
@@ -71,15 +137,9 @@ class SentinelManager:
             title = w.get("title", "")
             is_focused = (wid == focused_wid) or (wm_class == focused_class)
 
-            # Check if this app is whitelisted in target_apps
             aliases = KNOWN_WM_CLASS_ALIASES.get(wm_class, [wm_class])
             is_monitored = any(app in target_apps for app in aliases)
 
-            # Determine blackout status
-            # Critical rules:
-            # 1. If capture_all is True on Wayland, it triggers portal deny -> entire recording is pure black!
-            # 2. If app is focused and NOT monitored -> crowd-cast switches to blank_scene (pitch black)!
-            # 3. If app is untracked but not currently focused -> blackout risk if focused!
             if capture_all:
                 status = "ACTIVE_BLACKOUT"
                 reason_fa = "خطای بحرانی: حالت capture_all در ویلند باعث ضبط صفحه کاملاً سیاه می‌شود!"
@@ -119,15 +179,13 @@ class SentinelManager:
                 "can_one_click_fix": (status in ["ACTIVE_BLACKOUT", "BLACKOUT_RISK"]),
             })
 
-        # Sample recent luma if agent is running
         luma_info = self.luma_sampler.sample_latest_frame()
-        upload_schedule = self.bridge.get_upload_schedule_status()
 
         return {
             "vm_name": self.bridge.vm_name,
-            "agent_running": agent_status.get("running", False),
-            "agent_pid": agent_status.get("pid"),
-            "agent_logs": agent_status.get("recent_logs", []),
+            "agent_running": agent_running,
+            "agent_pid": agent_pid,
+            "agent_logs": agent_logs,
             "has_active_blackout": has_active_blackout,
             "blackout_windows_count": blackout_count,
             "total_windows": len(evaluated_windows),
@@ -141,6 +199,7 @@ class SentinelManager:
             },
             "luma": luma_info,
             "upload_schedule": upload_schedule,
+            "last_updated_at": time.time(),
         }
 
     def add_to_monitoring(self, wm_class: str) -> Dict[str, Any]:
