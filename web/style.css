@@ -615,6 +615,81 @@ tr.row-blackout-risk td {
   gap: 16px;
 }
 
+/* Uploader Progress Card */
+.uploader-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.uploader-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progress-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.86rem;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-cyan));
+  border-radius: 9999px;
+  transition: width 0.4s ease;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
+}
+
+.upload-stats-mini {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 6px;
+}
+
+.upload-stats-mini strong {
+  color: #fff;
+  font-family: var(--font-mono);
+}
+
+.active-chunk-box {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  font-size: 0.76rem;
+}
+
+.active-chunk-box code {
+  color: #38bdf8;
+  font-family: var(--font-mono);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.uploader-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .preview-container {
   position: relative;
   width: 100%;

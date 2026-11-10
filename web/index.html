@@ -155,6 +155,45 @@
 
       <!-- Sidebar: Live Visual Probe & Quick Diagnostic -->
       <aside class="sidebar-layout">
+        <!-- Cloud Uploader & Progress Card -->
+        <div class="card uploader-card">
+          <div class="card-header">
+            <h3>📤 مدیریت آپلود ابری (S3)</h3>
+            <span id="badge-upload-status" class="badge badge-status stopped">متوقف</span>
+          </div>
+          
+          <div class="uploader-body">
+            <div class="progress-info-row">
+              <span id="upload-progress-label">پیشرفت کل صف:</span>
+              <strong id="upload-progress-percent">0%</strong>
+            </div>
+            
+            <div class="progress-bar-container">
+              <div id="upload-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+
+            <div class="upload-stats-mini">
+              <div>در انتظار: <strong id="upload-stat-pending">0</strong></div>
+              <div>ارسال شده: <strong id="upload-stat-completed">0</strong></div>
+              <div>ساعت تهران: <strong id="upload-stat-time">-</strong></div>
+            </div>
+
+            <div class="active-chunk-box" id="active-chunk-container">
+              <span>وضعیت ارسال: </span>
+              <code id="upload-active-chunk">در انتظار زمان‌بندی...</code>
+            </div>
+
+            <div class="uploader-controls">
+              <button id="btn-force-upload" class="btn btn-primary btn-xs" style="flex:1;">
+                🚀 شروع فوری آپلود
+              </button>
+              <button id="btn-pause-upload" class="btn btn-secondary btn-xs" style="flex:1;">
+                ⏸️ توقف دستی
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Live Snapshot Card -->
         <div class="card preview-card">
           <div class="card-header">

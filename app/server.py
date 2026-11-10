@@ -168,6 +168,26 @@ class SentinelRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200 if ok else 500, {"success": ok, "output": msg})
             return
 
+        elif path == "/api/upload/start":
+            ok, msg = self.bridge.start_manual_upload()
+            self._send_json(200 if ok else 500, {
+                "success": ok,
+                "message_fa": "فرایند آپلود دستی با موفقیت آغاز شد.",
+                "message_en": "Manual upload override started successfully.",
+                "output": msg
+            })
+            return
+
+        elif path == "/api/upload/pause":
+            ok, msg = self.bridge.pause_manual_upload()
+            self._send_json(200 if ok else 500, {
+                "success": ok,
+                "message_fa": "آپلود متوقف شد و به زمان‌بندی تهران بازگشت.",
+                "message_en": "Upload paused and returned to Tehran schedule.",
+                "output": msg
+            })
+            return
+
         elif path == "/api/settings/update":
             res = self.sentinel.update_settings(body)
             self._send_json(200 if res.get("success") else 500, res)

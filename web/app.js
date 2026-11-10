@@ -158,7 +158,7 @@ function renderUI(data) {
   // 4. Render Safeguards Check
   renderSafeguards(data.config);
 
-  // 4.1 Render Tehran Upload Schedule
+  // 4.1 Render Tehran Upload Schedule & Progress Bar
   if (data.upload_schedule && data.upload_schedule.tehran_time) {
     const sched = data.upload_schedule;
     const timeOnly = sched.tehran_time.split(' ')[1] || '';
@@ -168,12 +168,48 @@ function renderUI(data) {
     
     if (elTehranTime) elTehranTime.innerText = `${timeOnly} (تهران)`;
     if (elTehranStatus) {
-      if (sched.is_window_open) {
+      if (sched.is_active) {
         elTehranStatus.innerHTML = `<span style="color:#10b981; font-weight:700;">🟢 ${sched.status_fa}</span><br><small>${sched.next_event_fa}</small>`;
         if (elCardSched) elCardSched.style.borderColor = 'rgba(16, 185, 129, 0.5)';
       } else {
         elTehranStatus.innerHTML = `<span style="color:#f59e0b; font-weight:700;">⏸️ ${sched.status_fa}</span><br><small>${sched.next_event_fa}</small>`;
         if (elCardSched) elCardSched.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+      }
+    }
+
+    // Progress Card Elements
+    const elBar = document.getElementById('upload-progress-bar');
+    const elPct = document.getElementById('upload-progress-percent');
+    const elBadge = document.getElementById('badge-upload-status');
+    const elPending = document.getElementById('upload-stat-pending');
+    const elCompleted = document.getElementById('upload-stat-completed');
+    const elTime = document.getElementById('upload-stat-time');
+    const elActiveChunk = document.getElementById('upload-active-chunk');
+
+    const pct = sched.progress_percent !== undefined ? sched.progress_percent : 0;
+    if (elBar) elBar.style.width = `${pct}%`;
+    if (elPct) elPct.innerText = `${pct}%`;
+    if (elPending) elPending.innerText = sched.pending_segments || 0;
+    if (elCompleted) elCompleted.innerText = sched.uploaded_segments || 0;
+    if (elTime) elTime.innerText = timeOnly;
+
+    if (elBadge) {
+      if (sched.is_active) {
+        elBadge.className = 'badge badge-status running';
+        elBadge.innerText = sched.manual_override ? 'دستی فعال' : 'زمان‌بندی فعال';
+      } else {
+        elBadge.className = 'badge badge-status stopped';
+        elBadge.innerText = 'متوقف';
+      }
+    }
+
+    if (elActiveChunk) {
+      if (sched.active_chunk) {
+        elActiveChunk.innerText = sched.active_chunk;
+      } else if (sched.is_active) {
+        elActiveChunk.innerText = sched.pending_segments > 0 ? 'در حال برقراری ارتباط با S3...' : 'صف خالی است';
+      } else {
+        elActiveChunk.innerText = sched.next_event_fa;
       }
     }
   }
@@ -499,6 +535,46 @@ elSearchInput.oninput = (e) => {
   state.searchQuery = e.target.value;
   renderWindowsTable();
 };
+
+// Force Upload and Pause Upload Buttons
+const elBtnForceUpload = document.getElementById('btn-force-upload');
+const elBtnPauseUpload = document.getElementById('btn-pause-upload');
+
+if (elBtnForceUpload) {
+  elBtnForceUpload.onclick = async () => {
+    showToast('در حال شروع فرایند آپلود دستی...', 'info');
+    try {
+      const res = await fetch('/api/upload/start', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message_fa || 'آپلود دستی آغاز شد', 'success');
+        fetchState();
+      } else {
+        showToast(data.error || 'خطا در شروع آپلود', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+}
+
+if (elBtnPauseUpload) {
+  elBtnPauseUpload.onclick = async () => {
+    showToast('در حال توقف آپلود دستی...', 'info');
+    try {
+      const res = await fetch('/api/upload/pause', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message_fa || 'آپلود متوقف شد', 'info');
+        fetchState();
+      } else {
+        showToast(data.error || 'خطا در توقف آپلود', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+}
 
 document.querySelectorAll('.filter-chip').forEach(chip => {
   chip.onclick = () => {

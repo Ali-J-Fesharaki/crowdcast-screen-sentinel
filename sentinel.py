@@ -123,7 +123,38 @@ def cmd_status(args):
         luma = state["luma"]
         print(f"Latest Video Luma       : Mean {luma['mean']:.2f} (Min {luma['min']}, Max {luma['max']})")
         print(f"Blackout Detected       : {'🚨 YES' if luma['is_black'] else '🟢 NO'}")
+    if state.get("upload_schedule"):
+        sched = state["upload_schedule"]
+        print(f"Tehran Time             : {sched.get('tehran_time')}")
+        print(f"Upload Status           : {sched.get('status_fa')} ({sched.get('status_en')})")
+        print(f"Upload Progress         : {sched.get('progress_percent', 0)}% (Pending: {sched.get('pending_segments', 0)})")
     print("==================================\n")
+
+
+def cmd_upload(args):
+    bridge = IncusBridge(args.vm)
+    if args.action == "start":
+        ok, msg = bridge.start_manual_upload()
+        if ok:
+            print("🚀 فرایند آپلود دستی با موفقیت آغاز شد (Manual upload started).")
+        else:
+            print(f"❌ Failed: {msg}")
+    elif args.action == "pause":
+        ok, msg = bridge.pause_manual_upload()
+        if ok:
+            print("⏸️ آپلود متوقف شد و به زمان‌بندی تهران بازگشت (Upload paused).")
+        else:
+            print(f"❌ Failed: {msg}")
+    elif args.action == "status":
+        sched = bridge.get_upload_schedule_status()
+        print("\n=== Tehran Upload Status & Progress ===")
+        print(f"Tehran Time      : {sched.get('tehran_time')}")
+        print(f"Status           : {sched.get('status_fa')} ({sched.get('status_en')})")
+        print(f"Progress         : {sched.get('progress_percent', 0)}%")
+        print(f"Pending Segments : {sched.get('pending_segments', 0)}")
+        print(f"Next Event       : {sched.get('next_event_fa')}")
+        print(f"Active Chunk     : {sched.get('active_chunk') or 'None'}")
+        print("=======================================\n")
 
 
 def cmd_luma(args):
@@ -188,6 +219,11 @@ def main():
     # luma
     p_luma = subparsers.add_parser("luma", help="Sample latest frame and check brightness")
     p_luma.set_defaults(func=cmd_luma)
+
+    # upload
+    p_upload = subparsers.add_parser("upload", help="Control manual upload and view progress")
+    p_upload.add_argument("action", choices=["start", "pause", "status"], help="Upload action: start | pause | status")
+    p_upload.set_defaults(func=cmd_upload)
 
     args = parser.parse_args()
     args.func(args)

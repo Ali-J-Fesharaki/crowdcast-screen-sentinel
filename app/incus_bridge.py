@@ -221,6 +221,18 @@ class IncusBridge:
         except Exception:
             return {}
 
+    def start_manual_upload(self) -> Tuple[bool, str]:
+        """Forces manual upload start regardless of schedule."""
+        cmd = "touch /home/ubuntu/.local/state/crowdcast-ctl/manual_upload.flag && echo -n 'false' > /home/ubuntu/.local/share/agent/uploads_paused"
+        code, stdout, stderr = self.exec_guest(cmd)
+        return code == 0, stdout or stderr
+
+    def pause_manual_upload(self) -> Tuple[bool, str]:
+        """Pauses manual upload and returns to strict schedule."""
+        cmd = "rm -f /home/ubuntu/.local/state/crowdcast-ctl/manual_upload.flag && echo -n 'true' > /home/ubuntu/.local/share/agent/uploads_paused"
+        code, stdout, stderr = self.exec_guest(cmd)
+        return code == 0, stdout or stderr
+
     def get_agent_status(self) -> Dict[str, Any]:
         """Checks if crowd-cast-agent is running and inspects recent logs."""
         cmd = "~/.local/bin/crowdcast-ctl status"

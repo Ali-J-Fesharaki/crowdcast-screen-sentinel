@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Tehran Timezone Upload Gater & Scheduler for Crowd-Cast.
+"""Tehran Timezone Upload Gater, Scheduler & Progress Tracker for Crowd-Cast.
 
-Enforces:
-1. Upload window: Strictly 03:05:00 to 06:50:00 Tehran time (Asia/Tehran).
-2. Continuous recording: Recording is never paused or interrupted by upload schedules.
-3. Internet Time Synchronization: Verifies accurate time against trusted external HTTP/NTP
-   servers to prevent system clock drift / timezone desynchronization.
-4. Auto-gating: Sets ~/.local/share/agent/uploads_paused to 'true' outside the window
-   and 'false' inside the window.
-5. Emits real-time telemetry JSON for sentinel dashboard integration.
+Features:
+1. Schedule: Strictly 03:05:00 to 06:50:00 Tehran time (Asia/Tehran).
+2. Internet Time Sync: Verifies real time against google.com / cloudflare.com to cancel clock drift.
+3. Manual Override: 'Force Upload Now' button starts upload immediately regardless of time.
+4. Auto-Queueing: Scans recording directory for completed un-uploaded segments and populates pending_uploads.json.
+5. Real-Time Progress Bar: Tracks completed vs pending segments, upload percent (0-100%), and active chunk.
+6. Zero Recording Interruption: Capture is 100% continuous and never stopped.
 """
 
+import ast
 import json
 import logging
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -22,11 +23,15 @@ import zoneinfo
 from datetime import datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 
-# Paths
-STATE_DIR = Path(os.path.expanduser("~/.local/state/crowdcast-ctl"))
-AGENT_SHARE_DIR = Path(os.path.expanduser("~/.local/share/agent"))
+# Paths inside crowd-vm
+STATE_DIR = Path("/home/ubuntu/.local/state/crowdcast-ctl")
+AGENT_SHARE_DIR = Path("/home/ubuntu/.local/share/agent")
+RECORDINGS_DIR = Path("/home/ubuntu/shared-recordings/crowd-cast-recordings")
+LOGS_DIR = Path("/home/ubuntu/.local/state/agent/logs")
+
 UPLOADS_PAUSED_FILE = AGENT_SHARE_DIR / "uploads_paused"
 PENDING_UPLOADS_FILE = AGENT_SHARE_DIR / "pending_uploads.json"
+MANUAL_OVERRIDE_FLAG = STATE_DIR / "manual_upload.flag"
 STATUS_JSON = STATE_DIR / "tehran_upload_status.json"
 LOG_FILE = STATE_DIR / "tehran_upload_scheduler.log"
 
@@ -78,9 +83,7 @@ class TehranTimeSync:
                         self.clock_offset = real_utc_ts - local_midpoint
                         self.last_sync_time = time.time()
                         self.last_source = url
-                        logger.info(
-                            f"Internet time verified via {url} | Clock offset: {self.clock_offset:+.2f}s"
-                        )
+                        logger.info(f"Internet time verified via {url} | Clock offset: {self.clock_offset:+.2f}s")
                         return True
             except Exception as e:
                 logger.debug(f"Time sync check failed for {url}: {e}")
@@ -100,18 +103,159 @@ class TehranTimeSync:
         return dt_utc.astimezone(TEHRAN_TZ)
 
 
-def get_pending_uploads_count() -> int:
-    """Reads number of segments currently waiting in queue."""
-    if not PENDING_UPLOADS_FILE.exists():
-        return 0
-    try:
-        with open(PENDING_UPLOADS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, list):
-                return len(data)
-    except Exception:
-        pass
-    return 0
+class UploadProgressTracker:
+    def __init__(self):
+        self.initial_batch_total = 0
+        self.initial_batch_bytes = 0
+        self.session_uploaded_count = 0
+        self.session_uploaded_bytes = 0
+        self.session_start_time = 0.0
+        self.last_known_uploaded_segments = set()
+        self._init_history()
+
+    def _init_history(self):
+        """Loads historical successfully uploaded segments from agent logs."""
+        self.last_known_uploaded_segments = self.get_uploaded_segments_from_logs()
+
+    def get_uploaded_segments_from_logs(self):
+        """Scans agent logs for Successfully uploaded segment."""
+        uploaded = set()
+        for p in LOGS_DIR.glob("crowd-cast.log.*"):
+            try:
+                with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        if "Successfully uploaded segment" in line:
+                            m = re.search(r"Successfully uploaded segment\s+([\w-]+)", line)
+                            if m:
+                                uploaded.add(m.group(1))
+            except Exception:
+                pass
+        return uploaded
+
+    def get_current_uploading_chunk(self):
+        """Checks agent logs for the most recently started chunk upload."""
+        for p in sorted(LOGS_DIR.glob("crowd-cast.log.*"), key=lambda x: x.stat().st_mtime, reverse=True)[:1]:
+            try:
+                with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()[-40:]
+                    for line in reversed(lines):
+                        if "Uploading chunk" in line:
+                            m = re.search(r"Uploading chunk\s+([\w-]+)", line)
+                            if m:
+                                return m.group(1)
+            except Exception:
+                pass
+        return None
+
+    def scan_unuploaded_disk_segments(self):
+        """Finds completed segments on disk that have not yet been uploaded."""
+        all_uploaded = self.get_uploaded_segments_from_logs()
+        unuploaded = []
+
+        for mp4 in sorted(RECORDINGS_DIR.glob("recording_*.mp4"), key=lambda x: x.stat().st_mtime):
+            base = mp4.stem  # recording_<sess>_seg<num>
+            seg_name = base.replace("recording_", "")
+            size = mp4.stat().st_size
+            if size > 15000 and seg_name not in all_uploaded:
+                # Find matching msgpack
+                sess_match = re.match(r"(.*)_seg(\d+)", seg_name)
+                input_file = None
+                if sess_match:
+                    cand = RECORDINGS_DIR / f"input_{sess_match.group(1)}_seg{sess_match.group(2)}.msgpack"
+                    if cand.exists():
+                        input_file = cand
+
+                unuploaded.append({
+                    "segment_name": seg_name,
+                    "session_id": sess_match.group(1) if sess_match else seg_name,
+                    "video_path": str(mp4),
+                    "input_path": str(input_file) if input_file else "",
+                    "size_bytes": size + (input_file.stat().st_size if input_file else 0),
+                    "mtime": mp4.stat().st_mtime,
+                })
+        return unuploaded
+
+    def sync_pending_uploads_file(self):
+        """Ensures all unuploaded segments are present in pending_uploads.json."""
+        unuploaded = self.scan_unuploaded_disk_segments()
+        existing_entries = []
+        if PENDING_UPLOADS_FILE.exists():
+            try:
+                with open(PENDING_UPLOADS_FILE, "r", encoding="utf-8") as f:
+                    existing_entries = json.load(f)
+                    if not isinstance(existing_entries, list):
+                        existing_entries = []
+            except Exception:
+                existing_entries = []
+
+        existing_videos = {e.get("video_path") for e in existing_entries}
+        added = 0
+        for item in unuploaded:
+            if item["video_path"] not in existing_videos:
+                existing_entries.append({
+                    "session_id": item["session_id"],
+                    "video_path": item["video_path"],
+                    "input_path": item["input_path"],
+                    "buffered_at_epoch_s": int(item["mtime"]),
+                })
+                added += 1
+
+        if added > 0:
+            try:
+                with open(PENDING_UPLOADS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(existing_entries, f, indent=2)
+                logger.info(f"Synchronized {added} unuploaded segments into pending_uploads.json")
+            except Exception as e:
+                logger.error(f"Failed to update pending_uploads.json: {e}")
+
+        return len(existing_entries), sum(item["size_bytes"] for item in unuploaded)
+
+    def update_progress(self, is_uploading_active: bool):
+        """Computes current upload progress percentage and metrics."""
+        current_uploaded_set = self.get_uploaded_segments_from_logs()
+        new_uploaded = current_uploaded_set - self.last_known_uploaded_segments
+        if new_uploaded:
+            self.session_uploaded_count += len(new_uploaded)
+            self.last_known_uploaded_segments = current_uploaded_set
+            logger.info(f"Detected {len(new_uploaded)} newly completed upload(s) in this session!")
+
+        # Read pending entries
+        pending_count = 0
+        if PENDING_UPLOADS_FILE.exists():
+            try:
+                with open(PENDING_UPLOADS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        pending_count = len(data)
+            except Exception:
+                pass
+
+        # If upload just started, set batch baseline
+        if is_uploading_active and self.session_start_time == 0.0:
+            self.session_start_time = time.time()
+            self.initial_batch_total = pending_count + self.session_uploaded_count
+
+        if not is_uploading_active:
+            self.session_start_time = 0.0
+
+        # Calculate progress percentage
+        total_items = max(self.initial_batch_total, pending_count + self.session_uploaded_count)
+        if total_items > 0:
+            pct = round((self.session_uploaded_count / total_items) * 100.0, 1)
+            if pending_count == 0 and self.session_uploaded_count > 0:
+                pct = 100.0
+        else:
+            pct = 100.0 if pending_count == 0 else 0.0
+
+        active_chunk = self.get_current_uploading_chunk() if is_uploading_active else None
+
+        return {
+            "pending_count": pending_count,
+            "session_uploaded": self.session_uploaded_count,
+            "total_items": total_items,
+            "progress_percent": pct,
+            "active_chunk": active_chunk,
+        }
 
 
 def set_uploads_paused(paused: bool):
@@ -134,83 +278,117 @@ def set_uploads_paused(paused: bool):
             logger.error(f"Failed to write uploads_paused file: {e}")
 
 
-def calculate_window_status(dt_tehran: datetime):
-    """Determines whether current Tehran time is within the allowed window."""
+def calculate_window_status(dt_tehran: datetime, manual_override: bool):
+    """Determines whether upload is allowed."""
     cur_time = dt_tehran.time()
-    is_open = WINDOW_START <= cur_time <= WINDOW_END
+    is_scheduled_open = WINDOW_START <= cur_time <= WINDOW_END
+    is_active = is_scheduled_open or manual_override
 
-    # Calculate time to next window opening or closing
     today = dt_tehran.date()
     start_dt = datetime.combine(today, WINDOW_START, tzinfo=TEHRAN_TZ)
     end_dt = datetime.combine(today, WINDOW_END, tzinfo=TEHRAN_TZ)
 
-    if is_open:
+    if manual_override:
+        next_event_fa = "آپلود دستی فعال است (با کلیک شما شروع شده)"
+        next_event_en = "Manual Upload Active (Override initiated by user)"
+    elif is_scheduled_open:
         seconds_remaining = (end_dt - dt_tehran).total_seconds()
-        next_event = f"پنجره تا {WINDOW_END.strftime('%H:%M:%S')} باز است ({int(seconds_remaining // 60)} دقیقه باقی‌مانده)"
+        next_event_fa = f"پنجره تا {WINDOW_END.strftime('%H:%M:%S')} باز است ({int(seconds_remaining // 60)} دقیقه باقی‌مانده)"
         next_event_en = f"Window open until {WINDOW_END.strftime('%H:%M:%S')} ({int(seconds_remaining // 60)}m remaining)"
     else:
         if dt_tehran < start_dt:
             seconds_until = (start_dt - dt_tehran).total_seconds()
         else:
-            # Tomorrow at 03:05
             tomorrow_start = start_dt + timedelta(days=1)
             seconds_until = (tomorrow_start - dt_tehran).total_seconds()
 
         hours = int(seconds_until // 3600)
         minutes = int((seconds_until % 3600) // 60)
-        next_event = f"پنجره بعدی در {WINDOW_START.strftime('%H:%M:%S')} باز می‌شود ({hours} ساعت و {minutes} دقیقه دیگر)"
+        next_event_fa = f"پنجره بعدی در {WINDOW_START.strftime('%H:%M:%S')} باز می‌شود ({hours} ساعت و {minutes} دقیقه دیگر)"
         next_event_en = f"Next window opens at {WINDOW_START.strftime('%H:%M:%S')} ({hours}h {minutes}m)"
 
-    return is_open, next_event, next_event_en
+    return is_active, is_scheduled_open, next_event_fa, next_event_en
 
 
 def run_scheduler_loop():
-    logger.info("=== Tehran Timezone Upload Scheduler Started ===")
+    logger.info("=== Tehran Timezone Upload Scheduler & Progress Engine Started ===")
     logger.info(f"Target upload window: {WINDOW_START.strftime('%H:%M:%S')} to {WINDOW_END.strftime('%H:%M:%S')} (Asia/Tehran)")
 
     time_sync = TehranTimeSync()
     time_sync.sync_with_internet()
+
+    tracker = UploadProgressTracker()
+    tracker.sync_pending_uploads_file()
 
     last_logged_state = None
 
     while True:
         try:
             dt_tehran = time_sync.get_current_tehran_datetime()
-            is_open, next_event_fa, next_event_en = calculate_window_status(dt_tehran)
-            pending_count = get_pending_uploads_count()
+            manual_override = MANUAL_OVERRIDE_FLAG.exists()
+            is_active, is_sched_open, next_event_fa, next_event_en = calculate_window_status(dt_tehran, manual_override)
+
+            # Keep unuploaded segments synced in pending queue
+            tracker.sync_pending_uploads_file()
 
             # Enforce gating
-            # When window is open: uploads_paused = false
-            # When window is closed: uploads_paused = true
-            should_pause = not is_open
+            should_pause = not is_active
             set_uploads_paused(should_pause)
 
+            # Update progress metrics
+            prog = tracker.update_progress(is_active)
+
+            # If manual override and queue reached 0, auto-release override after completion
+            if manual_override and prog["pending_count"] == 0 and prog["session_uploaded"] > 0:
+                logger.info("Manual upload queue is fully empty and completed! Disengaging override...")
+                try:
+                    MANUAL_OVERRIDE_FLAG.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
             # State transition notification
-            if is_open != last_logged_state:
-                if is_open:
+            if is_active != last_logged_state:
+                if is_active:
+                    mode = "دستی (Manual)" if manual_override else "زمان‌بندی شده (Scheduled)"
                     logger.info(
-                        f"🟢 [WINDOW OPENED] Tehran Time: {dt_tehran.strftime('%H:%M:%S')}. "
-                        f"Resuming uploads! Queue has {pending_count} pending segments."
+                        f"🟢 [UPLOAD STARTED - {mode}] Tehran Time: {dt_tehran.strftime('%H:%M:%S')}. "
+                        f"Queue has {prog['pending_count']} pending segments."
                     )
                 else:
                     logger.info(
-                        f"⏸️ [WINDOW CLOSED] Tehran Time: {dt_tehran.strftime('%H:%M:%S')}. "
-                        f"Pausing uploads. Queue has {pending_count} pending segments."
+                        f"⏸️ [UPLOAD PAUSED] Tehran Time: {dt_tehran.strftime('%H:%M:%S')}. "
+                        f"Queue has {prog['pending_count']} pending segments."
                     )
-                last_logged_state = is_open
+                last_logged_state = is_active
 
-            # Write status JSON for Sentinel web dashboard
+            # Format status badge text
+            if manual_override:
+                status_fa = "🚀 آپلود دستی در حال اجرا (Manual Override)"
+                status_en = "Manual Upload Active"
+            elif is_sched_open:
+                status_fa = "🟢 آپلود خودکار فعال (پنجره ۳:۰۵ تا ۶:۵۰)"
+                status_en = "Scheduled Upload Active"
+            else:
+                status_fa = "⏸️ آپلود متوقف (خارج از پنجره مجاز)"
+                status_en = "Uploads Paused (Outside Window)"
+
             status_data = {
                 "tehran_time": dt_tehran.strftime("%Y-%m-%d %H:%M:%S %Z"),
                 "tehran_time_iso": dt_tehran.isoformat(),
-                "is_window_open": is_open,
+                "is_active": is_active,
+                "is_window_open": is_sched_open,
+                "manual_override": manual_override,
                 "window_start": WINDOW_START.strftime("%H:%M:%S"),
                 "window_end": WINDOW_END.strftime("%H:%M:%S"),
-                "status_fa": "در حال آپلود (پنجره فعال)" if is_open else "آپلودها متوقف (خارج از پنجره مجاز)",
-                "status_en": "Uploading (Window Open)" if is_open else "Uploads Paused (Outside Window)",
+                "status_fa": status_fa,
+                "status_en": status_en,
                 "next_event_fa": next_event_fa,
                 "next_event_en": next_event_en,
-                "pending_segments": pending_count,
+                "pending_segments": prog["pending_count"],
+                "uploaded_segments": prog["session_uploaded"],
+                "total_batch_segments": prog["total_items"],
+                "progress_percent": prog["progress_percent"],
+                "active_chunk": prog["active_chunk"],
                 "time_sync_source": time_sync.last_source,
                 "clock_offset_seconds": round(time_sync.clock_offset, 2),
                 "last_sync_timestamp": time_sync.last_sync_time,
@@ -223,7 +401,7 @@ def run_scheduler_loop():
         except Exception as e:
             logger.error(f"Error in scheduler iteration: {e}")
 
-        time.sleep(5)
+        time.sleep(3)
 
 
 if __name__ == "__main__":
